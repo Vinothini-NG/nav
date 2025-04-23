@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Coconut Office Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    #map {
+      width: 80%;
+      height: 100vh;
+      float: right;
+    }
+
+    #sidebar {
+      width: 20%;
+      height: 100vh;
+      position: fixed;
+      top: 0;
+      left: 0;
+      background-color: #f4f4f4;
+      padding: 20px;
+      box-shadow: 2px 0 6px rgba(0,0,0,0.1);
+      z-index: 1000;
+    }
+
+    #header {
+      font-size: 20px;
+      color: #333;
+      font-weight: bold;
+      margin-bottom: 20px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      font-size: 14px;
+      color: #444;
+    }
+
+    .form-group input, .form-group datalist {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #aaa;
+      border-radius: 4px;
+      margin-top: 5px;
+    }
+
+    .form-group button {
+      width: 100%;
+      padding: 10px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 15px;
+    }
+
+    .form-group button:hover {
+      background-color: #0056b3;
+    }
+
+    .room-label {
+      background: rgba(255,255,255,0.9);
+      border-radius: 6px;
+      padding: 2px 6px;
+      font-size: 12px;
+      color: #000;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Sidebar for controls -->
+<div id="sidebar">
+  <div id="header">🏢 Coconut Office Map</div>
+  <div class="form-group">
+    <label for="sourceRoom">Source Room</label>
+    <input list="roomList" id="sourceRoom" placeholder="e.g. Coconut Room" />
+  </div>
+  <div class="form-group">
+    <label for="destinationRoom">Destination Room</label>
+    <input list="roomList" id="destinationRoom" placeholder="e.g. Pantry" />
+    <datalist id="roomList"></datalist>
+  </div>
+  <div class="form-group">
+    <button id="searchButton">Find Route</button>
+  </div>
+</div>
+
+<!-- Map container -->
+<div id="map"></div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+  const map = L.map('map', {
+    crs: L.CRS.Simple,
+    minZoom: -2
+  });
+
+  const bounds = [[0, 0], [900, 1200]];
+  L.imageOverlay('floorplan-office.png', bounds).addTo(map);
+  map.fitBounds(bounds);
+
+  const rooms = {
+    "Coconut Room": [[744, 273],[754, 468],[650, 481],[647, 264]],
+    "Coconut Office": [[756,496],[760,829],[605,835],[580,504]],
+    "Conference Room": [[621,265],[623,473],[415,475],[411,272]],
+    "CEO Cabin": [[385,272],[390,477],[262,482],[260,275]],
+    "Pantry": [[236,340],[240,483],[135,507],[138,350]],
+    "Balcony": [[232,283],[231,309],[102,510],[45,507]],
+    "Resting Area": [[104,559],[110,843],[52,849],[47,565]],
+    "Pathway": [[544,509],[552,536],[116,550],[117,519]],
+    "Employee Cabin": [[579,564],[582,836],[161,840],[140,586]],
+    "Wifi Access": [[205,794],[204,830],[174,831],[173,794]]
+  };
+
+  function getCenter(coords) {
+    const latSum = coords.reduce((sum, pt) => sum + pt[0], 0);
+    const lngSum = coords.reduce((sum, pt) => sum + pt[1], 0);
+    return [latSum / coords.length, lngSum / coords.length];
+  }
+
+  for (let name in rooms) {
+    const polygon = L.polygon(rooms[name], {
+      color: '#888',
+      weight: 1,
+      fillOpacity: 0.1,
+      dashArray: '5, 5'
+    }).addTo(map);
+
+    const center = getCenter(rooms[name]);
+
+    L.tooltip({
+      permanent: true,
+      direction: 'center',
+      className: 'room-label'
+    }).setContent(name).setLatLng(center).addTo(map);
+  }
+
+  const datalist = document.getElementById('roomList');
+  Object.keys(rooms).forEach(room => {
+    const opt = document.createElement('option');
+    opt.value = room;
+    datalist.appendChild(opt);
+  });
+
+  let routeLayers = [];
+
+  function clearRoutes() {
+    routeLayers.forEach(layer => map.removeLayer(layer));
+    routeLayers = [];
+  }
+
+  function findRoute(sourceName, destName) {
+    clearRoutes();
+
+    const sourceRoom = Object.keys(rooms).find(r => r.toLowerCase() === sourceName.toLowerCase());
+    const destRoom = Object.keys(rooms).find(r => r.toLowerCase() === destName.toLowerCase());
+
+    if (!sourceRoom || !destRoom) {
+      alert("Invalid room name entered.");
+      return;
+    }
+
+    const sourceCenter = getCenter(rooms[sourceRoom]);
+    const pathCenter = getCenter(rooms["Pathway"]);
+    const destCenter = getCenter(rooms[destRoom]);
+
+    const route = L.polyline([sourceCenter, pathCenter, destCenter], {
+      color: '#ff6600',
+      weight: 4,
+      dashArray: '10, 10',
+      opacity: 0.9
+    }).addTo(map);
+    routeLayers.push(route);
+
+    const sourceMarker = L.marker(sourceCenter, {
+      title: "Source"
+    }).addTo(map).bindPopup(`📍 ${sourceRoom}`).openPopup();
+
+    const destMarker = L.marker(destCenter, {
+      title: "Destination"
+    }).addTo(map).bindPopup(`🏁 ${destRoom}`);
+
+    routeLayers.push(sourceMarker, destMarker);
+  }
+
+  document.getElementById('searchButton').addEventListener('click', () => {
+    const source = document.getElementById('sourceRoom').value;
+    const destination = document.getElementById('destinationRoom').value;
+    findRoute(source, destination);
+  });
+
+  // Fetch predicted location from backend
+  async function detectCurrentZone() {
+    try {
+      const res = await fetch("http://127.0.0.1:5000/predict");
+      const data = await res.json();
+      if (data.predicted_zone) {
+        document.getElementById("sourceRoom").value = data.predicted_zone;
+        alert("📍 Detected zone: " + data.predicted_zone);
+      } else {
+        alert("❌ Could not detect current zone.");
+      }
+    } catch (err) {
+      alert("🚫 Error connecting to server.");
+      console.error(err);
+    }
+  }
+
+  // Auto-detect on page load
+  window.onload = detectCurrentZone;
+</script>
+</body>
+</html>
